@@ -1,0 +1,15 @@
+{
+  "name": "citations-mcp",
+  "version": "1.0.0",
+  "description": "Research Citations MCP Server",
+  "scripts": {
+    "start": "bash ./start_public.sh"
+  },
+  "keywords": [
+    "mcp",
+    "citations",
+    "research"
+  ],
+  "author": "",
+  "license": "ISC"
+}

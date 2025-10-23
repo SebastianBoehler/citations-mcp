@@ -59,6 +59,35 @@ class PDFProcessor:
             logger.error(f"Error loading PDF {pdf_path}: {e}")
             raise
 
+    async def load_first_pages(self, pdf_path: Path, num_pages: int = 2) -> str:
+        """
+        Load only the first N pages of a PDF file for metadata extraction.
+
+        Args:
+            pdf_path: Path to the PDF file
+            num_pages: Number of pages to load from the beginning (default: 2)
+
+        Returns:
+            Combined text content from the first N pages
+        """
+        try:
+            loader = PyPDFLoader(str(pdf_path))
+            pages = []
+            
+            # Load only the first N pages
+            async for page in loader.alazy_load():
+                pages.append(page.page_content)
+                if len(pages) >= num_pages:
+                    break
+            
+            combined_text = "\n\n".join(pages)
+            logger.info(f"Loaded first {len(pages)} pages from {pdf_path.name} for metadata extraction")
+            return combined_text
+
+        except Exception as e:
+            logger.error(f"Error loading first pages from PDF {pdf_path}: {e}")
+            raise
+
     def load_pdf_sync(self, pdf_path: Path) -> List[Document]:
         """
         Synchronous wrapper for loading a PDF file.
@@ -71,22 +100,26 @@ class PDFProcessor:
         """
         return asyncio.run(self.load_pdf(pdf_path))
 
-    def chunk_documents(self, documents: List[Document]) -> List[Document]:
+    def chunk_documents(self, documents: List[Document], base_filename: str = None) -> List[Document]:
         """
         Split documents into smaller chunks.
 
         Args:
             documents: List of Document objects to chunk
+            base_filename: Optional filename to use for unique chunk IDs
 
         Returns:
             List of chunked Document objects
         """
         chunks = self.text_splitter.split_documents(documents)
         
-        # Add chunk-specific metadata
+        # Add chunk-specific metadata with unique IDs per document
         for i, chunk in enumerate(chunks):
             chunk.metadata["chunk_id"] = i
             chunk.metadata["total_chunks"] = len(chunks)
+            # Ensure filename is set for unique ID generation
+            if base_filename and "filename" not in chunk.metadata:
+                chunk.metadata["filename"] = base_filename
         
         return chunks
 

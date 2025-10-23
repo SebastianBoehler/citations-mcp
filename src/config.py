@@ -46,7 +46,7 @@ class Settings(BaseSettings):
         default="text-embedding-3-small", description="OpenAI embedding model"
     )
     llm_model: str = Field(
-        default="gpt-4o-mini", description="LLM model for query processing"
+        default="gpt-4o", description="LLM model for query processing"
     )
 
     # Server settings

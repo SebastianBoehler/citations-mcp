@@ -7,6 +7,10 @@ A Model Context Protocol (MCP) server for searching and citing research papers u
 - 🔍 **Semantic Search**: Find relevant passages across all your research papers
 - 📚 **Citation Finder**: Get properly formatted citations with source references
 - 💡 **Question Answering**: Ask questions and get answers backed by your papers
+- 📝 **Paper Summarization**: Generate summaries with custom prompts or pre-defined focus areas
+- 🔬 **Methodology Extraction**: Extract structured methodology details from papers
+- 📖 **Bibliography Extraction**: Get APA-formatted citations from paper reference sections
+- 🏷️ **Automatic Metadata Extraction**: During index rebuild, automatically extracts authors, year, title, and APA citation from first 1-2 pages using GPT-4o
 - 📄 **PDF Processing**: Automatic extraction and chunking of text from PDFs
 - 🚀 **SSE Transport**: Remote access via Server-Sent Events
 - 🎯 **Vector Search**: ChromaDB-powered semantic similarity search
@@ -154,13 +158,59 @@ Get information about a specific paper.
 ```
 
 #### 7. `rebuild_index`
-Rebuild the vector store index (use after adding new papers).
+Rebuild the vector store index (use after adding new papers). During rebuild, the server automatically:
+- Extracts metadata from the first 1-2 pages of each paper using GPT-4o
+- Captures authors, publication year, title, journal/conference, DOI, and generates APA citation
+- Attaches this metadata to all chunks for easy citation reference
 
 ```python
 {
   "force": true
 }
 ```
+
+**Note**: Metadata extraction uses GPT-4o API calls (one per paper), so rebuilding with many papers may incur API costs.
+
+#### 8. `extract_methodology`
+Extract structured methodology details from a research paper.
+
+```python
+{
+  "filename": "attention_is_all_you_need.pdf"
+}
+```
+
+Returns: Research approach, datasets, models, evaluation metrics, experimental setup, baselines, and implementation details.
+
+#### 9. `summarize_paper`
+Generate a summary of a research paper with custom prompts or pre-defined focus.
+
+```python
+{
+  "filename": "attention_is_all_you_need.pdf",
+  "focus": "key_findings"  // Options: "general", "key_findings", "methodology", "limitations", "contributions"
+}
+```
+
+Or with a custom prompt:
+
+```python
+{
+  "filename": "attention_is_all_you_need.pdf",
+  "custom_prompt": "Summarize the experimental results and their statistical significance"
+}
+```
+
+#### 10. `extract_bibliography`
+Extract the bibliography/references from a paper in APA format.
+
+```python
+{
+  "filename": "attention_is_all_you_need.pdf"
+}
+```
+
+Returns: APA-formatted list of all citations used in the paper.
 
 ### Connecting from Claude Desktop
 

@@ -192,7 +192,7 @@ async def rebuild_index(force: bool = False) -> Dict[str, Any]:
     """
     try:
         logger.info(f"Rebuilding index (force={force})...")
-        rag_engine.initialize_vector_store(force_rebuild=force)
+        await rag_engine.initialize_vector_store(force_rebuild=force)
         papers = rag_engine.list_papers()
         
         return {
@@ -209,12 +209,96 @@ async def rebuild_index(force: bool = False) -> Dict[str, Any]:
         }
 
 
+@mcp.tool()
+async def extract_methodology(filename: str) -> Dict[str, Any]:
+    """
+    Extract methodology details from a research paper including datasets, 
+    models, evaluation metrics, and experimental setup.
+    
+    Args:
+        filename: Name of the PDF file (e.g., "smith_2023.pdf")
+        
+    Returns:
+        Dictionary with structured methodology information
+    """
+    try:
+        result = rag_engine.extract_methodology(filename)
+        return result
+    except Exception as e:
+        logger.error(f"Error extracting methodology: {e}")
+        return {
+            "error": str(e),
+            "filename": filename,
+        }
+
+
+@mcp.tool()
+async def summarize_paper(
+    filename: str, 
+    custom_prompt: str = None,
+    focus: str = "general"
+) -> Dict[str, Any]:
+    """
+    Generate a summary of a research paper with optional custom focus.
+    
+    Args:
+        filename: Name of the PDF file (e.g., "smith_2023.pdf")
+        custom_prompt: Optional custom prompt for specific summarization needs
+                      (e.g., "Summarize the experimental results and their statistical significance")
+        focus: Pre-defined focus if custom_prompt not used. Options:
+               - "general": Comprehensive overview (default)
+               - "key_findings": Main results and discoveries
+               - "methodology": Research methods and approach
+               - "limitations": Constraints and future work
+               - "contributions": Main contributions to the field
+        
+    Returns:
+        Dictionary with paper summary
+    """
+    try:
+        result = rag_engine.summarize_paper(
+            filename=filename,
+            custom_prompt=custom_prompt,
+            focus=focus
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error summarizing paper: {e}")
+        return {
+            "error": str(e),
+            "filename": filename,
+        }
+
+
+@mcp.tool()
+async def extract_bibliography(filename: str) -> Dict[str, Any]:
+    """
+    Extract the bibliography/references from a research paper and format in APA style.
+    This shows what citations are used within the paper.
+    
+    Args:
+        filename: Name of the PDF file (e.g., "smith_2023.pdf")
+        
+    Returns:
+        Dictionary with bibliography in APA format
+    """
+    try:
+        result = rag_engine.extract_bibliography(filename)
+        return result
+    except Exception as e:
+        logger.error(f"Error extracting bibliography: {e}")
+        return {
+            "error": str(e),
+            "filename": filename,
+        }
+
+
 # Initialize the RAG engine when the module is loaded
-def initialize_rag():
+async def initialize_rag():
     """Initialize the RAG engine and vector store."""
     logger.info("Initializing RAG engine...")
     try:
-        rag_engine.initialize_vector_store(force_rebuild=False)
+        await rag_engine.initialize_vector_store(force_rebuild=False)
         papers = rag_engine.list_papers()
         logger.info(f"RAG engine initialized with {len(papers)} papers")
     except Exception as e:

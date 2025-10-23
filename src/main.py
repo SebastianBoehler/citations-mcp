@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Vector DB path: {settings.vector_db_path}")
     
     # Initialize RAG engine on startup
-    initialize_rag()
+    await initialize_rag()
     
     yield
     

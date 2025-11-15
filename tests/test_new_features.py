@@ -448,5 +448,153 @@ def test_find_citation_includes_bibliography(mock_settings, mock_embeddings, moc
     assert len(johnson_citation["relevant_excerpts"]) == 1
 
 
+@patch('src.rag_engine.ChatOpenAI')
+@patch('src.rag_engine.OpenAIEmbeddings')
+@patch('src.rag_engine.get_settings')
+def test_list_papers_with_metadata_levels(mock_settings, mock_embeddings, mock_llm_class):
+    """Test list_papers with different metadata levels."""
+    from src.rag_engine import RAGEngine, PaperMetadataLevel
+    
+    # Setup mocks
+    mock_settings.return_value = Mock(
+        openai_api_key="test-key",
+        embedding_model="text-embedding-3-small",
+        llm_model="gpt-4o-mini",
+        vector_db_path="/tmp/test_vector_db",
+        collection_name="test_papers"
+    )
+    
+    # Create engine
+    engine = RAGEngine()
+    
+    # Mock vector store
+    mock_vector_store = MagicMock()
+    engine.vector_store = mock_vector_store
+    
+    # Mock collection with multiple papers
+    mock_collection = MagicMock()
+    mock_collection.get.return_value = {
+        "metadatas": [
+            {
+                "filename": "paper1.pdf",
+                "paper_title": "Machine Learning Basics",
+                "paper_authors": "Smith, J.",
+                "paper_year": "2023",
+                "paper_publication": "AI Journal",
+                "paper_doi": "10.1234/ml.2023.001",
+                "paper_apa_citation": "Smith, J. (2023). Machine learning basics. AI Journal, 10(1), 1-20."
+            },
+            {
+                "filename": "paper2.pdf",
+                "paper_title": "Deep Learning Advanced",
+                "paper_authors": "Johnson, A., & Doe, B.",
+                "paper_year": "2024",
+                "paper_publication": "ML Conference",
+                "paper_doi": "10.5678/dl.2024.002",
+                "paper_apa_citation": "Johnson, A., & Doe, B. (2024). Deep learning advanced. ML Conference Proceedings, 5, 100-125."
+            },
+            # Multiple chunks from same paper (should deduplicate)
+            {
+                "filename": "paper1.pdf",
+                "paper_title": "Machine Learning Basics",
+                "paper_authors": "Smith, J.",
+                "paper_year": "2023",
+                "paper_publication": "AI Journal",
+                "paper_doi": "10.1234/ml.2023.001",
+                "paper_apa_citation": "Smith, J. (2023). Machine learning basics. AI Journal, 10(1), 1-20."
+            },
+        ]
+    }
+    mock_vector_store._collection = mock_collection
+    
+    # Test FILENAME_ONLY (default)
+    result_default = engine.list_papers()
+    assert isinstance(result_default, list)
+    assert len(result_default) == 2  # Deduplicated
+    assert "paper1.pdf" in result_default
+    assert "paper2.pdf" in result_default
+    assert all(isinstance(item, str) for item in result_default)
+    
+    # Test FILENAME_ONLY (explicit)
+    result_filename = engine.list_papers(metadata_level=PaperMetadataLevel.FILENAME_ONLY)
+    assert result_filename == result_default
+    
+    # Test WITH_AUTHORS
+    result_authors = engine.list_papers(metadata_level=PaperMetadataLevel.WITH_AUTHORS)
+    assert isinstance(result_authors, list)
+    assert len(result_authors) == 2
+    assert all(isinstance(item, dict) for item in result_authors)
+    assert result_authors[0]["filename"] == "paper1.pdf"
+    assert result_authors[0]["title"] == "Machine Learning Basics"
+    assert result_authors[0]["authors"] == "Smith, J."
+    assert "apa_citation" not in result_authors[0]  # Should not include this
+    
+    # Test WITH_BIBLIOGRAPHY
+    result_bib = engine.list_papers(metadata_level=PaperMetadataLevel.WITH_BIBLIOGRAPHY)
+    assert isinstance(result_bib, list)
+    assert len(result_bib) == 2
+    assert result_bib[0]["filename"] == "paper1.pdf"
+    assert result_bib[0]["title"] == "Machine Learning Basics"
+    assert result_bib[0]["apa_citation"] == "Smith, J. (2023). Machine learning basics. AI Journal, 10(1), 1-20."
+    assert "authors" not in result_bib[0]  # Should not include detailed authors
+    
+    # Test FULL
+    result_full = engine.list_papers(metadata_level=PaperMetadataLevel.FULL)
+    assert isinstance(result_full, list)
+    assert len(result_full) == 2
+    assert result_full[0]["filename"] == "paper1.pdf"
+    assert result_full[0]["title"] == "Machine Learning Basics"
+    assert result_full[0]["authors"] == "Smith, J."
+    assert result_full[0]["year"] == "2023"
+    assert result_full[0]["publication"] == "AI Journal"
+    assert result_full[0]["doi"] == "10.1234/ml.2023.001"
+    assert result_full[0]["apa_citation"] == "Smith, J. (2023). Machine learning basics. AI Journal, 10(1), 1-20."
+    
+    # Verify second paper
+    assert result_full[1]["filename"] == "paper2.pdf"
+    assert result_full[1]["authors"] == "Johnson, A., & Doe, B."
+
+
+@pytest.mark.asyncio
+async def test_list_papers_mcp_tool():
+    """Test list_papers MCP tool with metadata parameter."""
+    from src.mcp_server import list_papers, rag_engine
+    
+    # Mock the rag_engine.list_papers method
+    with patch.object(rag_engine, 'list_papers') as mock_list:
+        # Test filename_only
+        mock_list.return_value = ["paper1.pdf", "paper2.pdf"]
+        result = await list_papers(metadata_level="filename_only")
+        assert result["total_papers"] == 2
+        assert result["metadata_level"] == "filename_only"
+        assert result["papers"] == ["paper1.pdf", "paper2.pdf"]
+        
+        # Test with_authors
+        mock_list.return_value = [
+            {"filename": "paper1.pdf", "title": "Test", "authors": "Author A."}
+        ]
+        result = await list_papers(metadata_level="with_authors")
+        assert result["total_papers"] == 1
+        assert result["metadata_level"] == "with_authors"
+        assert result["papers"][0]["authors"] == "Author A."
+        
+        # Test invalid metadata_level
+        result = await list_papers(metadata_level="invalid_option")
+        assert "error" in result
+        assert "Invalid metadata_level" in result["error"]
+        assert "valid_options" in result
+
+
+def test_paper_metadata_level_enum_exists():
+    """Test that PaperMetadataLevel enum is properly defined."""
+    from src.rag_engine import PaperMetadataLevel
+    
+    # Verify enum values
+    assert PaperMetadataLevel.FILENAME_ONLY.value == "filename_only"
+    assert PaperMetadataLevel.WITH_AUTHORS.value == "with_authors"
+    assert PaperMetadataLevel.WITH_BIBLIOGRAPHY.value == "with_bibliography"
+    assert PaperMetadataLevel.FULL.value == "full"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from mcp.server.fastmcp import FastMCP
 
 from src.config import get_settings
-from src.rag_engine import RAGEngine
+from src.rag_engine import RAGEngine, PaperMetadataLevel
 
 logger = logging.getLogger(__name__)
 
@@ -158,17 +158,36 @@ async def search_in_paper(query: str, filename: str, num_results: int = 5) -> Di
 
 
 @mcp.tool()
-async def list_papers() -> Dict[str, Any]:
+async def list_papers(
+    metadata_level: str = "filename_only"
+) -> Dict[str, Any]:
     """
-    List all research papers currently indexed in the system.
+    List all research papers currently indexed in the system with optional metadata.
+    
+    Args:
+        metadata_level: Level of detail to return. Options:
+            - "filename_only": Just the filename (default)
+            - "with_authors": Filename, title, and authors
+            - "with_bibliography": Filename, title, and APA citation
+            - "full": All available metadata (title, authors, year, publication, DOI, APA citation)
     
     Returns:
-        Dictionary with list of paper filenames
+        Dictionary with list of papers (format depends on metadata_level)
     """
     try:
-        papers = rag_engine.list_papers()
+        # Convert string to enum
+        try:
+            level = PaperMetadataLevel(metadata_level)
+        except ValueError:
+            return {
+                "error": f"Invalid metadata_level: {metadata_level}",
+                "valid_options": [level.value for level in PaperMetadataLevel],
+            }
+        
+        papers = rag_engine.list_papers(metadata_level=level)
         return {
             "total_papers": len(papers),
+            "metadata_level": metadata_level,
             "papers": papers,
         }
     except Exception as e:

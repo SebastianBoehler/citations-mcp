@@ -3,6 +3,7 @@
 import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+from enum import Enum
 
 from langchain.schema import Document
 from langchain_chroma import Chroma
@@ -14,6 +15,14 @@ from src.config import get_settings
 from src.pdf_processor import PDFProcessor
 
 logger = logging.getLogger(__name__)
+
+
+class PaperMetadataLevel(str, Enum):
+    """Enum for controlling metadata detail level in list_papers."""
+    FILENAME_ONLY = "filename_only"
+    WITH_AUTHORS = "with_authors"
+    WITH_BIBLIOGRAPHY = "with_bibliography"
+    FULL = "full"
 
 
 class RAGEngine:
@@ -759,12 +768,22 @@ Be precise and accurate with the information you extract."""
                 "error": str(e),
             }
     
-    def list_papers(self) -> List[str]:
+    def list_papers(
+        self, 
+        metadata_level: PaperMetadataLevel = PaperMetadataLevel.FILENAME_ONLY
+    ) -> List[Dict[str, Any]] | List[str]:
         """
-        List all papers in the vector store.
+        List all papers in the vector store with optional metadata.
+
+        Args:
+            metadata_level: Level of metadata to include in results
+                - FILENAME_ONLY: Just the filename (default, backward compatible)
+                - WITH_AUTHORS: Filename, title, and authors
+                - WITH_BIBLIOGRAPHY: Filename, title, and APA citation
+                - FULL: All available metadata
 
         Returns:
-            List of paper filenames
+            List of paper filenames or dictionaries with metadata (depending on metadata_level)
         """
         if self.vector_store is None:
             raise RuntimeError("Vector store not initialized. Call initialize_vector_store() first.")
@@ -773,11 +792,44 @@ Be precise and accurate with the information you extract."""
         collection = self.vector_store._collection
         all_metadata = collection.get()
         
-        # Extract unique filenames
-        filenames = set()
+        # Build paper information from unique filenames
+        papers_dict = {}
         if all_metadata.get("metadatas"):
             for metadata in all_metadata["metadatas"]:
-                if "filename" in metadata:
-                    filenames.add(metadata["filename"])
+                filename = metadata.get("filename")
+                if filename and filename not in papers_dict:
+                    papers_dict[filename] = metadata
         
-        return sorted(list(filenames))
+        # Return based on metadata level
+        if metadata_level == PaperMetadataLevel.FILENAME_ONLY:
+            return sorted(list(papers_dict.keys()))
+        
+        # Build detailed responses
+        papers_list = []
+        for filename in sorted(papers_dict.keys()):
+            metadata = papers_dict[filename]
+            
+            if metadata_level == PaperMetadataLevel.WITH_AUTHORS:
+                papers_list.append({
+                    "filename": filename,
+                    "title": metadata.get("paper_title", "Not found"),
+                    "authors": metadata.get("paper_authors", "Not found"),
+                })
+            elif metadata_level == PaperMetadataLevel.WITH_BIBLIOGRAPHY:
+                papers_list.append({
+                    "filename": filename,
+                    "title": metadata.get("paper_title", "Not found"),
+                    "apa_citation": metadata.get("paper_apa_citation", "Not found"),
+                })
+            elif metadata_level == PaperMetadataLevel.FULL:
+                papers_list.append({
+                    "filename": filename,
+                    "title": metadata.get("paper_title", "Not found"),
+                    "authors": metadata.get("paper_authors", "Not found"),
+                    "year": metadata.get("paper_year", "Not found"),
+                    "publication": metadata.get("paper_publication", "Not found"),
+                    "doi": metadata.get("paper_doi", "Not found"),
+                    "apa_citation": metadata.get("paper_apa_citation", "Not found"),
+                })
+        
+        return papers_list

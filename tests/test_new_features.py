@@ -229,6 +229,72 @@ def test_mcp_tools_registered():
 
 
 @pytest.mark.asyncio
+async def test_find_citation_widget_annotation():
+    """Ensure find_citation exposes the UI widget metadata."""
+    from src.mcp_server import mcp
+
+    tools = await mcp.list_tools()
+    find_tool = next(tool for tool in tools if tool.name == "find_citation")
+
+    assert find_tool.annotations is not None
+    annotations = find_tool.annotations.model_dump(exclude_none=True)
+    assert annotations.get("openai/outputTemplate") == "ui://widget/find-citations.html"
+
+
+@pytest.mark.asyncio
+async def test_citation_widget_resource_registered():
+    """Ensure the citation widget resource is discoverable."""
+    from src.mcp_server import mcp
+
+    resources = await mcp.list_resources()
+    widget_resource = next(
+        (
+            res
+            for res in resources
+            if str(res.uri) == "ui://widget/find-citations.html"
+        ),
+        None,
+    )
+
+    assert widget_resource is not None, "find-citations widget resource is missing"
+    assert widget_resource.mimeType == "text/html+skybridge"
+
+
+@pytest.mark.asyncio
+@patch('src.mcp_server.rag_engine.find_citation')
+async def test_find_citation_returns_structured_payload(mock_find):
+    """Tool responses should include Apps SDK structuredContent."""
+    from src.mcp_server import find_citation as tool
+
+    mock_find.return_value = {
+        "topic": "qlora",
+        "citations": {
+            "paper.pdf": {
+                "bibliography": {
+                    "title": "Test Paper",
+                },
+                "relevant_excerpts": [
+                    {
+                        "page": 1,
+                        "excerpt": "Sample excerpt",
+                        "relevance_score": 0.1,
+                    }
+                ],
+            }
+        },
+        "total_sources": 1,
+    }
+
+    result = await tool("qlora", num_citations=2)
+
+    assert "structuredContent" in result
+    structured = result["structuredContent"]
+    assert structured["topic"] == "qlora"
+    assert structured["total_sources"] == 1
+    assert result["content"][0]["type"] == "text"
+
+
+@pytest.mark.asyncio
 @patch('src.rag_engine.ChatOpenAI')
 @patch('src.rag_engine.OpenAIEmbeddings')
 @patch('src.rag_engine.get_settings')

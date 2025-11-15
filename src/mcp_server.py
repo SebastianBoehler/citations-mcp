@@ -1,8 +1,10 @@
 """MCP server for research paper citations with RAG capabilities."""
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, List
 
+import mcp.types as types
 from mcp.server.fastmcp import FastMCP
 
 from src.config import get_settings
@@ -16,6 +18,112 @@ rag_engine = RAGEngine()
 
 # Create FastMCP server
 mcp = FastMCP("Research Citations MCP Server")
+
+WIDGET_URI = "ui://widget/find-citations.html"
+_WIDGET_HTML_CACHE: str | None = None
+_WIDGET_HTML_PATH = (
+    Path(__file__).resolve().parent.parent / "public" / "find-citations.html"
+)
+
+WIDGET_META = {
+    "openai/outputTemplate": WIDGET_URI,
+    "openai/toolInvocation/invoking": "Gathering citations",
+    "openai/toolInvocation/invoked": "Rendered citations",
+    "openai/widgetAccessible": True,
+    "openai/resultCanProduceWidget": True,
+}
+
+
+def _load_widget_html() -> str:
+    """Load the Apps SDK widget HTML from disk (cached)."""
+    global _WIDGET_HTML_CACHE  # noqa: PLW0603 - cache maintained module-wide
+    if _WIDGET_HTML_CACHE is None:
+        try:
+            _WIDGET_HTML_CACHE = _WIDGET_HTML_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error(
+                "Citation widget HTML not found at %s. Falling back to placeholder.",
+                _WIDGET_HTML_PATH,
+            )
+            _WIDGET_HTML_CACHE = (
+                "<html><body><p>Citation widget missing from server deployment.</p></body></html>"
+            )
+    return _WIDGET_HTML_CACHE
+
+
+@mcp.resource(
+    WIDGET_URI,
+    name="find-citations-widget",
+    title="Find Citations Widget",
+    description="Renders grouped citations with bibliography and excerpts.",
+    mime_type="text/html+skybridge",
+)
+async def find_citations_widget() -> str:
+    """Expose the Apps SDK widget HTML to ChatGPT."""
+    return _load_widget_html()
+
+
+@mcp._mcp_server.list_tools()
+async def _apps_list_tools() -> List[types.Tool]:
+    """Expose tools with Apps metadata so ChatGPT can discover widgets."""
+    tool_infos = mcp._tool_manager.list_tools()
+    results = []
+    for info in tool_infos:
+        meta = WIDGET_META if info.name == "find_citation" else None
+        annotations = info.annotations
+        results.append(
+            types.Tool(
+                name=info.name,
+                title=info.title,
+                description=info.description,
+                inputSchema=info.parameters,
+                outputSchema=info.output_schema,
+                annotations=annotations,
+                icons=info.icons,
+                _meta=meta,
+            )
+        )
+    return results
+
+
+@mcp._mcp_server.list_resources()
+async def _apps_list_resources() -> List[types.Resource]:
+    """Expose widget resources with Apps metadata."""
+    resources = []
+    for resource in mcp._resource_manager.list_resources():
+        uri = str(resource.uri)
+        meta = WIDGET_META if uri == WIDGET_URI else None
+        resources.append(
+            types.Resource(
+                name=resource.name or "",
+                title=resource.title,
+                uri=uri,
+                description=resource.description,
+                mimeType=resource.mime_type,
+                icons=resource.icons,
+                _meta=meta,
+            )
+        )
+    return resources
+
+
+@mcp._mcp_server.list_resource_templates()
+async def _apps_list_resource_templates() -> List[types.ResourceTemplate]:
+    """Include metadata for widget resource templates."""
+    templates = []
+    for template in mcp._resource_manager.list_templates():
+        meta = WIDGET_META if template.uri_template == WIDGET_URI else None
+        templates.append(
+            types.ResourceTemplate(
+                name=template.name or "",
+                title=template.title,
+                uriTemplate=template.uri_template,
+                description=template.description,
+                mimeType=template.mime_type,
+                _meta=meta,
+            )
+        )
+    return templates
 
 
 @mcp.tool()
@@ -46,7 +154,7 @@ async def search_papers(query: str, num_results: int = 5) -> Dict[str, Any]:
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"openai/outputTemplate": WIDGET_URI})
 async def find_citation(topic: str, num_citations: int = 3) -> Dict[str, Any]:
     """
     Find relevant citations for a specific topic or concept.
@@ -61,12 +169,29 @@ async def find_citation(topic: str, num_citations: int = 3) -> Dict[str, Any]:
     """
     try:
         citations = rag_engine.find_citation(topic, k=num_citations)
-        return citations
+        summary = (
+            f"Found {citations.get('total_sources', 0)} source(s) for '{topic}'."
+        )
+        return {
+            "content": [{"type": "text", "text": summary}],
+            "structuredContent": citations,
+            "_meta": WIDGET_META,
+        }
     except Exception as e:
         logger.error(f"Error finding citations: {e}")
-        return {
+        error_payload = {
             "error": str(e),
             "topic": topic,
+        }
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Failed to find citations for '{topic}': {e}",
+                }
+            ],
+            "structuredContent": error_payload,
+            "_meta": WIDGET_META,
         }
 
 

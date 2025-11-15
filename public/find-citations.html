@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Citation Explorer</title>
+    <style>
+      :root {
+        color: #0b0f19;
+        font-family: "Inter", "SF Pro Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f5f6fb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 20px;
+        background: #f5f6fb;
+        display: flex;
+        justify-content: center;
+      }
+
+      main {
+        width: min(960px, 100%);
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 35px 80px rgba(15, 23, 42, 0.09);
+      }
+
+      header {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+
+      header h1 {
+        font-size: 1.6rem;
+        margin: 0;
+      }
+
+      #status-pill {
+        font-size: 0.85rem;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: 1fr 140px auto;
+        gap: 10px;
+        margin-bottom: 18px;
+      }
+
+      @media (max-width: 720px) {
+        form {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      input,
+      select,
+      button {
+        font: inherit;
+      }
+
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid #cbd5f5;
+        padding: 10px 14px;
+        background: #f9f9ff;
+      }
+
+      input:focus {
+        outline: 2px solid #4338ca44;
+        border-color: #4338ca;
+        background: #fff;
+      }
+
+      button {
+        border: none;
+        border-radius: 12px;
+        background: linear-gradient(120deg, #4338ca, #6d28d9);
+        color: #fff;
+        font-weight: 600;
+        padding: 0 22px;
+        cursor: pointer;
+        transition: transform 120ms ease;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      button:not(:disabled):hover {
+        transform: translateY(-1px);
+      }
+
+      #summary-card {
+        border: 1px solid #eceffe;
+        border-radius: 16px;
+        padding: 16px;
+        background: #fafaff;
+        margin-bottom: 20px;
+      }
+
+      #summary-card h2 {
+        margin: 0 0 6px;
+        font-size: 1.1rem;
+      }
+
+      #summary-card p {
+        margin: 2px 0;
+        color: #475467;
+        font-size: 0.95rem;
+      }
+
+      #results {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+
+      .citation-card {
+        border: 1px solid #e4e7f5;
+        border-radius: 18px;
+        padding: 18px;
+        background: #fff;
+        box-shadow: 0 15px 35px rgba(15, 23, 42, 0.05);
+      }
+
+      .citation-metadata {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-bottom: 12px;
+      }
+
+      .bibliography {
+        font-size: 0.92rem;
+        color: #475467;
+      }
+
+      .filename {
+        font-size: 0.85rem;
+        color: #94a3b8;
+      }
+
+      .excerpt-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .excerpt-item {
+        border-left: 3px solid #c7d2fe;
+        padding-left: 12px;
+      }
+
+      .excerpt-header {
+        font-size: 0.85rem;
+        color: #6366f1;
+        margin-bottom: 4px;
+      }
+
+      .excerpt-text {
+        margin: 0;
+        font-size: 0.95rem;
+        color: #111827;
+      }
+
+      #empty-state {
+        border: 1px dashed #d0d7ff;
+        padding: 26px;
+        border-radius: 16px;
+        text-align: center;
+        color: #6b7280;
+      }
+
+      #toast {
+        margin-top: 8px;
+        font-size: 0.85rem;
+      }
+
+      #toast[data-variant="error"] {
+        color: #b91c1c;
+      }
+
+      #toast[data-variant="success"] {
+        color: #166534;
+      }
+
+      #toast[data-variant="info"] {
+        color: #0f172a;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Find Citations</h1>
+        <span id="status-pill">Waiting for tool output…</span>
+      </header>
+
+      <section id="summary-card" aria-live="polite">
+        <h2>Results summary</h2>
+        <p id="summary-text">Waiting for the MCP tool to return citations.</p>
+        <p id="timestamp-text"></p>
+      </section>
+
+      <section id="results"></section>
+      <div id="empty-state" hidden>
+        <p>No citations yet.</p>
+        <p>Submit a topic above to populate the widget.</p>
+      </div>
+    </main>
+
+    <script type="module">
+      const state = {
+        payload: null,
+        lastUpdated: null,
+      };
+
+      const resultsEl = document.getElementById("results");
+      const emptyStateEl = document.getElementById("empty-state");
+      const summaryTextEl = document.getElementById("summary-text");
+      const timestampTextEl = document.getElementById("timestamp-text");
+      const statusPillEl = document.getElementById("status-pill");
+
+      const formatTime = (date) =>
+        date ? new Intl.DateTimeFormat(undefined, { timeStyle: "medium" }).format(date) : "";
+
+      const coerceStructured = (output) => {
+        if (!output) return null;
+        if (output.structuredContent) {
+          console.debug("[citations-widget] structuredContent wrapper detected", output);
+          return output.structuredContent;
+        }
+        if (output.result) {
+          console.debug("[citations-widget] result wrapper detected", output);
+          return coerceStructured(output.result);
+        }
+        console.debug("[citations-widget] raw payload detected", output);
+        return output;
+      };
+
+      const setStatus = (message) => {
+        statusPillEl.textContent = message;
+      };
+
+      const updatePayload = (raw) => {
+        const structured = coerceStructured(raw);
+        if (!structured || typeof structured !== "object") {
+          console.warn("[citations-widget] payload missing or not an object", structured);
+          return;
+        }
+        console.debug("[citations-widget] updating payload", structured);
+        state.payload = structured;
+        state.lastUpdated = new Date();
+        render();
+      };
+
+      const render = () => {
+        const payload = state.payload;
+        summaryTextEl.textContent = payload
+          ? payload.error
+            ? `Unable to retrieve citations for "${payload.topic ?? ""}"`
+            : `Found ${payload.total_sources ?? 0} source(s) for "${payload.topic ?? ""}"`
+          : "Waiting for tool output...";
+
+        timestampTextEl.textContent = payload && state.lastUpdated ? `Updated ${formatTime(state.lastUpdated)}` : "";
+
+        if (!payload || payload.error || !payload.citations || Object.keys(payload.citations).length === 0) {
+          resultsEl.innerHTML = "";
+          emptyStateEl.hidden = false;
+          if (payload?.error) {
+            console.warn("[citations-widget] payload error", payload.error);
+          } else {
+            console.info("[citations-widget] no citations present", payload);
+          }
+          return;
+        }
+
+        emptyStateEl.hidden = true;
+        const entries = Object.entries(payload.citations);
+        resultsEl.innerHTML = "";
+        console.debug("[citations-widget] rendering entries", entries);
+
+        entries.forEach(([filename, info]) => {
+          const card = document.createElement("article");
+          card.className = "citation-card";
+
+          const meta = document.createElement("div");
+          meta.className = "citation-metadata";
+          const title = document.createElement("strong");
+          title.textContent = info?.bibliography?.title ?? "Untitled paper";
+          const authors = document.createElement("span");
+          authors.className = "bibliography";
+          authors.textContent = info?.bibliography?.authors ?? "Unknown authors";
+          const citation = document.createElement("span");
+          citation.className = "bibliography";
+          citation.textContent = info?.bibliography?.apa_citation ?? "APA citation unavailable.";
+          const fileLabel = document.createElement("span");
+          fileLabel.className = "filename";
+          fileLabel.textContent = filename;
+
+          meta.append(title, authors, citation, fileLabel);
+          card.appendChild(meta);
+
+          const excerptList = document.createElement("ul");
+          excerptList.className = "excerpt-list";
+
+          (info?.relevant_excerpts ?? []).forEach((excerpt) => {
+            const item = document.createElement("li");
+            item.className = "excerpt-item";
+            const header = document.createElement("div");
+            header.className = "excerpt-header";
+            const page = excerpt?.page ?? "?";
+            const score = typeof excerpt?.relevance_score === "number" ? excerpt.relevance_score.toFixed(3) : excerpt?.relevance_score;
+            header.textContent = `Page ${page} • Score ${score ?? "-"}`;
+            const body = document.createElement("p");
+            body.className = "excerpt-text";
+            body.textContent = excerpt?.excerpt ?? "";
+            item.append(header, body);
+            excerptList.appendChild(item);
+          });
+
+          card.appendChild(excerptList);
+          resultsEl.appendChild(card);
+        });
+      };
+
+      const initialOutput = window.openai?.toolOutput;
+      if (initialOutput) {
+        updatePayload(initialOutput);
+        setStatus("Showing latest tool response");
+      }
+
+      window.addEventListener(
+        "openai:set_globals",
+        (event) => {
+          const globals = event.detail?.globals;
+          if (globals?.toolOutput) {
+            updatePayload(globals.toolOutput);
+            setStatus("Synced with latest tool output");
+          }
+        },
+        { passive: true }
+      );
+
+      if (!window.openai) {
+        emptyStateEl.hidden = false;
+        summaryTextEl.textContent = "window.openai is not available – open inside ChatGPT to view citations.";
+        setStatus("Unsupported host");
+      }
+    </script>
+  </body>
+</html>

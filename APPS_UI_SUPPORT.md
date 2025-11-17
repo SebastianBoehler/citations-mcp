@@ -46,7 +46,6 @@ Concise checklist for keeping the `find_citation` tool rendering correctly insid
 
 ## 3. Widget Behavior (`public/find-citations.html`)
 
-- The iframe is **display-only**: no search inputs, just rendering of the injected structured data.
 - `window.openai.toolOutput` and `openai:set_globals` listeners feed data into `render()`.
 - `coerceStructured()` must unwrap both:
   1. Direct `{ structuredContent, ... }` payloads.

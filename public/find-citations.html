@@ -173,12 +173,48 @@
         font-size: 0.85rem;
         color: #6366f1;
         margin-bottom: 4px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .excerpt-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
       }
 
       .excerpt-text {
         margin: 0;
         font-size: 0.95rem;
         color: #111827;
+        line-height: 1.5;
+        max-height: 300px;
+        overflow-y: auto;
+        padding: 8px;
+        background: #f8f9ff;
+        border-radius: 8px;
+        border: 1px solid #eef2ff;
+      }
+
+      .score-badge {
+        background: #4f46e5;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+      }
+
+      .chunk-id {
+        background: #e5e7eb;
+        color: #374151;
+        padding: 2px 8px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        font-family: monospace;
       }
 
       #empty-state {
@@ -239,8 +275,7 @@
       const timestampTextEl = document.getElementById("timestamp-text");
       const statusPillEl = document.getElementById("status-pill");
 
-      const formatTime = (date) =>
-        date ? new Intl.DateTimeFormat(undefined, { timeStyle: "medium" }).format(date) : "";
+      const formatTime = (date) => (date ? new Intl.DateTimeFormat(undefined, { timeStyle: "medium" }).format(date) : "");
 
       const coerceStructured = (output) => {
         if (!output) return null;
@@ -327,9 +362,23 @@
             item.className = "excerpt-item";
             const header = document.createElement("div");
             header.className = "excerpt-header";
+            
+            // Create left side info
+            const infoDiv = document.createElement("div");
+            infoDiv.className = "excerpt-info";
             const page = excerpt?.page ?? "?";
+            const chunkId = excerpt?.chunk_id ?? 0;
+            infoDiv.innerHTML = `<span>Page ${page}</span><span class="chunk-id">Chunk ${chunkId}</span>`;
+            
+            // Create right side score
             const score = typeof excerpt?.relevance_score === "number" ? excerpt.relevance_score.toFixed(3) : excerpt?.relevance_score;
-            header.textContent = `Page ${page} • Score ${score ?? "-"}`;
+            const scoreBadge = document.createElement("span");
+            scoreBadge.className = "score-badge";
+            scoreBadge.textContent = `Score ${score ?? "-"}`;
+            
+            header.appendChild(infoDiv);
+            header.appendChild(scoreBadge);
+            
             const body = document.createElement("p");
             body.className = "excerpt-text";
             body.textContent = excerpt?.excerpt ?? "";

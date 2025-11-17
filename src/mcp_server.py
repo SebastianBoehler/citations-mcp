@@ -20,15 +20,41 @@ rag_engine = RAGEngine()
 mcp = FastMCP("Research Citations MCP Server")
 
 WIDGET_URI = "ui://widget/find-citations.html"
+PAPERS_WIDGET_URI = "ui://widget/find-papers.html"
+LIST_PAPERS_WIDGET_URI = "ui://widget/list-papers.html"
 _WIDGET_HTML_CACHE: str | None = None
+_PAPERS_WIDGET_HTML_CACHE: str | None = None
+_LIST_PAPERS_WIDGET_HTML_CACHE: str | None = None
 _WIDGET_HTML_PATH = (
     Path(__file__).resolve().parent.parent / "public" / "find-citations.html"
+)
+_PAPERS_WIDGET_HTML_PATH = (
+    Path(__file__).resolve().parent.parent / "public" / "find-papers.html"
+)
+_LIST_PAPERS_WIDGET_HTML_PATH = (
+    Path(__file__).resolve().parent.parent / "public" / "list-papers.html"
 )
 
 WIDGET_META = {
     "openai/outputTemplate": WIDGET_URI,
     "openai/toolInvocation/invoking": "Gathering citations",
     "openai/toolInvocation/invoked": "Rendered citations",
+    "openai/widgetAccessible": True,
+    "openai/resultCanProduceWidget": True,
+}
+
+PAPERS_WIDGET_META = {
+    "openai/outputTemplate": PAPERS_WIDGET_URI,
+    "openai/toolInvocation/invoking": "Searching papers",
+    "openai/toolInvocation/invoked": "Rendered paper search results",
+    "openai/widgetAccessible": True,
+    "openai/resultCanProduceWidget": True,
+}
+
+LIST_PAPERS_WIDGET_META = {
+    "openai/outputTemplate": LIST_PAPERS_WIDGET_URI,
+    "openai/toolInvocation/invoking": "Listing papers",
+    "openai/toolInvocation/invoked": "Rendered paper list",
     "openai/widgetAccessible": True,
     "openai/resultCanProduceWidget": True,
 }
@@ -51,6 +77,40 @@ def _load_widget_html() -> str:
     return _WIDGET_HTML_CACHE
 
 
+def _load_papers_widget_html() -> str:
+    """Load the Apps SDK papers widget HTML from disk (cached)."""
+    global _PAPERS_WIDGET_HTML_CACHE  # noqa: PLW0603 - cache maintained module-wide
+    if _PAPERS_WIDGET_HTML_CACHE is None:
+        try:
+            _PAPERS_WIDGET_HTML_CACHE = _PAPERS_WIDGET_HTML_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error(
+                "Papers widget HTML not found at %s. Falling back to placeholder.",
+                _PAPERS_WIDGET_HTML_PATH,
+            )
+            _PAPERS_WIDGET_HTML_CACHE = (
+                "<html><body><p>Papers widget missing from server deployment.</p></body></html>"
+            )
+    return _PAPERS_WIDGET_HTML_CACHE
+
+
+def _load_list_papers_widget_html() -> str:
+    """Load the Apps SDK list papers widget HTML from disk (cached)."""
+    global _LIST_PAPERS_WIDGET_HTML_CACHE  # noqa: PLW0603 - cache maintained module-wide
+    if _LIST_PAPERS_WIDGET_HTML_CACHE is None:
+        try:
+            _LIST_PAPERS_WIDGET_HTML_CACHE = _LIST_PAPERS_WIDGET_HTML_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.error(
+                "List papers widget HTML not found at %s. Falling back to placeholder.",
+                _LIST_PAPERS_WIDGET_HTML_PATH,
+            )
+            _LIST_PAPERS_WIDGET_HTML_CACHE = (
+                "<html><body><p>List papers widget missing from server deployment.</p></body></html>"
+            )
+    return _LIST_PAPERS_WIDGET_HTML_CACHE
+
+
 @mcp.resource(
     WIDGET_URI,
     name="find-citations-widget",
@@ -63,13 +123,44 @@ async def find_citations_widget() -> str:
     return _load_widget_html()
 
 
+@mcp.resource(
+    PAPERS_WIDGET_URI,
+    name="find-papers-widget",
+    title="Find Papers Widget",
+    description="Renders paper search results with scores and content.",
+    mime_type="text/html+skybridge",
+)
+async def find_papers_widget() -> str:
+    """Expose the Apps SDK papers widget HTML to ChatGPT."""
+    return _load_papers_widget_html()
+
+
+@mcp.resource(
+    LIST_PAPERS_WIDGET_URI,
+    name="list-papers-widget",
+    title="List Papers Widget",
+    description="Renders a minimalistic list of all papers.",
+    mime_type="text/html+skybridge",
+)
+async def list_papers_widget() -> str:
+    """Expose the Apps SDK list papers widget HTML to ChatGPT."""
+    return _load_list_papers_widget_html()
+
+
 @mcp._mcp_server.list_tools()
 async def _apps_list_tools() -> List[types.Tool]:
     """Expose tools with Apps metadata so ChatGPT can discover widgets."""
     tool_infos = mcp._tool_manager.list_tools()
     results = []
     for info in tool_infos:
-        meta = WIDGET_META if info.name == "find_citation" else None
+        if info.name == "find_citation":
+            meta = WIDGET_META
+        elif info.name == "search_papers":
+            meta = PAPERS_WIDGET_META
+        elif info.name == "list_papers":
+            meta = LIST_PAPERS_WIDGET_META
+        else:
+            meta = None
         annotations = info.annotations
         results.append(
             types.Tool(
@@ -92,7 +183,14 @@ async def _apps_list_resources() -> List[types.Resource]:
     resources = []
     for resource in mcp._resource_manager.list_resources():
         uri = str(resource.uri)
-        meta = WIDGET_META if uri == WIDGET_URI else None
+        if uri == WIDGET_URI:
+            meta = WIDGET_META
+        elif uri == PAPERS_WIDGET_URI:
+            meta = PAPERS_WIDGET_META
+        elif uri == LIST_PAPERS_WIDGET_URI:
+            meta = LIST_PAPERS_WIDGET_META
+        else:
+            meta = None
         resources.append(
             types.Resource(
                 name=resource.name or "",
@@ -112,7 +210,14 @@ async def _apps_list_resource_templates() -> List[types.ResourceTemplate]:
     """Include metadata for widget resource templates."""
     templates = []
     for template in mcp._resource_manager.list_templates():
-        meta = WIDGET_META if template.uri_template == WIDGET_URI else None
+        if template.uri_template == WIDGET_URI:
+            meta = WIDGET_META
+        elif template.uri_template == PAPERS_WIDGET_URI:
+            meta = PAPERS_WIDGET_META
+        elif template.uri_template == LIST_PAPERS_WIDGET_URI:
+            meta = LIST_PAPERS_WIDGET_META
+        else:
+            meta = None
         templates.append(
             types.ResourceTemplate(
                 name=template.name or "",
@@ -126,7 +231,7 @@ async def _apps_list_resource_templates() -> List[types.ResourceTemplate]:
     return templates
 
 
-@mcp.tool()
+@mcp.tool(annotations=PAPERS_WIDGET_META)
 async def search_papers(query: str, num_results: int = 5) -> Dict[str, Any]:
     """
     Search for relevant passages in research papers using semantic search.
@@ -142,15 +247,29 @@ async def search_papers(query: str, num_results: int = 5) -> Dict[str, Any]:
         results = rag_engine.search_with_scores(query, k=num_results)
         
         return {
-            "query": query,
-            "num_results": len(results),
-            "results": results,
+            "content": [{"type": "text", "text": f"Found {len(results)} results for '{query}'"}],
+            "structuredContent": {
+                "query": query,
+                "num_results": len(results),
+                "results": results,
+            },
+            "_meta": PAPERS_WIDGET_META,
         }
     except Exception as e:
         logger.error(f"Error searching papers: {e}")
-        return {
+        error_payload = {
             "error": str(e),
             "query": query,
+        }
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Failed to search papers for '{query}': {e}",
+                }
+            ],
+            "structuredContent": error_payload,
+            "_meta": PAPERS_WIDGET_META,
         }
 
 
@@ -282,7 +401,7 @@ async def search_in_paper(query: str, filename: str, num_results: int = 5) -> Di
         }
 
 
-@mcp.tool()
+@mcp.tool(annotations=LIST_PAPERS_WIDGET_META)
 async def list_papers(
     metadata_level: str = "filename_only"
 ) -> Dict[str, Any]:
@@ -304,21 +423,46 @@ async def list_papers(
         try:
             level = PaperMetadataLevel(metadata_level)
         except ValueError:
-            return {
+            error_payload = {
                 "error": f"Invalid metadata_level: {metadata_level}",
                 "valid_options": [level.value for level in PaperMetadataLevel],
             }
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Invalid metadata_level: {metadata_level}",
+                    }
+                ],
+                "structuredContent": error_payload,
+                "_meta": LIST_PAPERS_WIDGET_META,
+            }
         
         papers = rag_engine.list_papers(metadata_level=level)
+        
         return {
-            "total_papers": len(papers),
-            "metadata_level": metadata_level,
-            "papers": papers,
+            "content": [{"type": "text", "text": f"Found {len(papers)} papers in the collection"}],
+            "structuredContent": {
+                "total_papers": len(papers),
+                "metadata_level": metadata_level,
+                "papers": papers,
+            },
+            "_meta": LIST_PAPERS_WIDGET_META,
         }
     except Exception as e:
         logger.error(f"Error listing papers: {e}")
-        return {
+        error_payload = {
             "error": str(e),
+        }
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"Failed to list papers: {e}",
+                }
+            ],
+            "structuredContent": error_payload,
+            "_meta": LIST_PAPERS_WIDGET_META,
         }
 
 

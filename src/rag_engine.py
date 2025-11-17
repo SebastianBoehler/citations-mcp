@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from enum import Enum
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain.chains.retrieval_qa.base import RetrievalQA
+from langchain_core.prompts import PromptTemplate
 
 from src.config import get_settings
 from src.pdf_processor import PDFProcessor
@@ -360,7 +360,8 @@ class RAGEngine:
             # Add excerpt to this paper's excerpts
             citations_by_paper[filename]["relevant_excerpts"].append({
                 "page": metadata.get("page"),
-                "excerpt": result["content"][:300] + "..." if len(result["content"]) > 300 else result["content"],
+                "chunk_id": metadata.get("chunk_id", 0),
+                "excerpt": result["content"],
                 "relevance_score": result["score"],
             })
         
